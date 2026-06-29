@@ -1,0 +1,21 @@
+name: multiomics-sc
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - scanpy
+    - anndata
+    - numpy
+    - pandas
+    - scipy
+    - scikit-learn
+    - matplotlib
+    - seaborn
+    - torch
+    - leidenalg
+    - python-igraph
+    - jupyter
+    - ipykernel

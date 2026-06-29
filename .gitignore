@@ -1,0 +1,24 @@
+# Data — never commit large files
+data/benchmark/
+data/processed/
+*.h5ad
+*.h5
+*.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+*.egg-info/
+.env
+.venv/
+
+# Results — figures committed, checkpoints not
+results/checkpoints/
+*.pt
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
