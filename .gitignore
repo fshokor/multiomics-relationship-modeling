@@ -1,6 +1,5 @@
-# Data — never commit large files
-data/benchmark/
-data/processed/
+# Data — local inputs are not versioned
+/data/
 *.h5ad
 *.h5
 *.gz
@@ -14,11 +13,12 @@ __pycache__/
 .env
 .venv/
 
-# Results — figures committed, checkpoints not
-results/checkpoints/
+# Results — generated tables, figures and caches are not versioned
+/results/
 *.pt
 *.pkl
 
 # OS
 .DS_Store
 Thumbs.db
+*Zone.Identifier
