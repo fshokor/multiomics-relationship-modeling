@@ -110,15 +110,14 @@ mapping, donor selection, independently balanced samples, enrichment against a d
 reference calculation, deterministic permutations, negative/unsupported states, empty
 results, notebook structure, and a synthetic h5ad-to-concordance run with stale-output
 detection. Synthetic outputs use temporary directories and do not populate biological
-results. Regenerate only the new notebooks with
-`python scripts/build_single_donor_notebooks.py`.
+results. Do not regenerate executed notebooks: the nb04/05 generator replaces them.
 
-The real data are on Drive, not available in this local checkout. The first milestone
-must still be run and interpreted there. In accordance with the requested sequencing,
-nb06 (ATAC gene activity) is now implemented following review of the executed RNA
-notebooks; see [the ATAC run guide](ATAC_WORKFLOW.md). Its real-data execution remains
-pending in Colab. nb07 (direct versus phenotypic protein support) and nb08
-(multilayer summaries) are **not implemented yet**. Their future implementation must
-preserve within-capture pairing only, distinguish unmeasured ADTs from negative
-evidence, standardize layer scores, and avoid causal or temporal-priming claims.
+The real data are on Drive. Executed nb04–06 results have been reviewed. See
+[the ATAC run guide](ATAC_WORKFLOW.md) for nb06. nb07 is now implemented for direct
+versus phenotypic protein support; see [the protein run guide](PROTEIN_WORKFLOW.md).
+Its real-data outputs have been reviewed, including site and same-gene sensitivity.
+nb08 multilayer summaries are now implemented; see [the multilayer guide](MULTILAYER_WORKFLOW.md).
+The full nb08 real-data run remains pending in Colab. All stages preserve within-capture
+pairing only, distinguish unmeasured ADTs from negative evidence, and avoid causal
+or temporal-priming claims.
 Targeted peak follow-up and multi-donor pseudobulk are also deferred.

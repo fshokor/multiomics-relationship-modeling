@@ -44,3 +44,10 @@ gate before ATAC/protein follow-up. The original notebooks are preserved.
 After reviewing nb05, run `nb06_pathway_atac_support.ipynb` for paired Multiome
 RNA–ATAC program support. Copy `src/atac_programs.py` and `src/atac_plots.py` to the
 same Drive project first. See [the ATAC run guide](ATAC_WORKFLOW.md).
+
+After reviewing nb06, run `nb07_pathway_protein_support.ipynb` for paired CITE
+RNA–ADT support. See [the protein run guide](PROTEIN_WORKFLOW.md) for the three
+files to copy, evidence tiers, progress reporting and saved outputs.
+
+After nb07 review, `nb08_multilayer_pathway_states.ipynb` combines saved RNA, ATAC
+and protein evidence without loading raw matrices. See [the multilayer guide](MULTILAYER_WORKFLOW.md).

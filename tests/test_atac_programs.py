@@ -88,7 +88,13 @@ class AtacTests(unittest.TestCase):
                 obs = pd.DataFrame({'DonorID': 'd1', 'Site': ['s1', 's2'] * (len(labels)//2), 'cell_type': labels,
                                     'ATAC_nCount_peaks': rng.integers(100, 1000, len(labels))},
                                    index=[f'{dataset}_{i}' for i in range(len(labels))])
-                obj = ad.AnnData(sparse.csr_matrix(counts), obs=obs, var=pd.DataFrame({'feature_types': 'GEX'}, index=genes))
+                feature_names, feature_types = genes, ['GEX'] * len(genes)
+                stored = counts
+                if dataset == 'cite':
+                    feature_names = genes + ['G000', 'G020', 'G040']
+                    feature_types += ['ADT'] * 3
+                    stored = np.column_stack([counts, counts[:, [0, 20, 40]] + 1])
+                obj = ad.AnnData(sparse.csr_matrix(stored), obs=obs, var=pd.DataFrame({'feature_types': feature_types}, index=feature_names))
                 obj.layers['counts'] = obj.X.copy()
                 if dataset == 'multiome':
                     activity = np.log1p(counts + rng.poisson(1, counts.shape))
@@ -115,6 +121,25 @@ class AtacTests(unittest.TestCase):
             self.assertEqual(before, (output / 'manifest.json').read_bytes())
             self.assertTrue((output / 'atac/figures/rna_atac_module_scatter.png').is_file())
             self.assertEqual(json.loads((output / 'atac/status.json').read_text())['state'], 'complete')
+            from src.protein_programs import run_protein
+            protein, protein_manifest = run_protein(output, paths['cite'], min_cells=10, progress=False)
+            self.assertEqual(len(protein['coverage']), len(requested))
+            self.assertTrue((protein['coverage'].n_direct_genes == 1).all())
+            self.assertFalse(protein['direct_gene_associations'].empty)
+            self.assertTrue((output / 'protein/figures/direct_coverage.png').is_file())
+            self.assertEqual(before, (output / 'manifest.json').read_bytes())
+            self.assertEqual(json.loads((output / 'protein/status.json').read_text())['state'], 'complete')
+            from src.multimodal_summary import run_summary
+            summary, detail, meta = run_summary(output)
+            self.assertEqual(len(summary), len(requested))
+            self.assertFalse(detail.empty)
+            self.assertTrue((output / 'multilayer/figures/rna_atac_evidence.png').is_file())
+            self.assertEqual(before, (output / 'manifest.json').read_bytes())
+            stale = json.loads((output / 'protein/manifest.json').read_text())
+            stale['donor'] = 'different'
+            (output / 'protein/manifest.json').write_text(json.dumps(stale))
+            with self.assertRaisesRegex(ValueError, 'Donor mismatch'):
+                run_summary(output)
 
     def test_notebook(self):
         import nbformat
