@@ -32,3 +32,11 @@ conda activate multiomics-sc
 ## Context
 Genopole Shaker application deadline: July 15, 2026.
 GDSC/ProCan drug response project parked at nb17 — see separate repo.
+
+## Single-donor program characterization
+
+New notebooks `nb04_single_donor_rna_characterization.ipynb` and
+`nb05_rna_concordance.ipynb` implement the first incremental RNA milestone using
+the existing Colab/Drive data paths. See [the workflow guide](SINGLE_DONOR_WORKFLOW.md)
+for setup, scientific choices, saved outputs, tests and the real-data validation
+gate before ATAC/protein follow-up. The original notebooks are preserved.
