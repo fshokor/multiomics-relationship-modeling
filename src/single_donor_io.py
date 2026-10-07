@@ -20,11 +20,30 @@ def inspect_h5ad(path):
             raise ValueError(f"{path}: expected feature_types and layers/counts")
         for key in ("DonorID", "Site", "cell_type"):
             obs[key] = obs[key].astype(str)
-        if not obs.index.is_unique or not var.index.is_unique:
-            raise ValueError("Duplicate observation/feature names require explicit resolution")
+        if not obs.index.is_unique:
+            examples = obs.index[obs.index.duplicated()].unique().tolist()[:10]
+            raise ValueError(f"Duplicate cell IDs require explicit resolution; examples: {examples}")
+        # Combined benchmark matrices can reuse a name for GEX and ADT.
+        # Features are selected by integer column position, so these collisions
+        # are harmless. Only the RNA symbol namespace must be unique downstream.
+        rna_names = var.index[var.feature_types == "GEX"].astype(str)
+        if not rna_names.is_unique:
+            examples = rna_names[rna_names.duplicated()].unique().tolist()[:10]
+            raise ValueError(
+                f"Duplicate names within GEX (not across modalities): {examples}. "
+                "Inspect var['gene_id'] before deciding whether to aggregate counts; "
+                "do not append suffixes to gene symbols used for pathway matching."
+            )
+        duplicate_names = var.index[var.index.duplicated(keep=False)].unique()
+        duplicate_audit = [
+            {"name": str(name), "feature_types": var.loc[var.index == name, "feature_types"].astype(str).tolist()}
+            for name in duplicate_names
+        ]
         audit = {"path": str(Path(path).resolve()), "file_bytes": Path(path).stat().st_size,
                  "file_mtime_ns": Path(path).stat().st_mtime_ns, "shape": [len(obs), len(var)],
                  "feature_types": var.feature_types.value_counts().to_dict(),
+                 "repeated_feature_names": duplicate_audit,
+                 "feature_name_policy": "Select GEX by column position; require unique RNA symbols only",
                  "layers": list(f["layers"]), "obsm": list(f.get("obsm", {})),
                  "X_encoding": str(f["X"].attrs.get("encoding-type", "unknown")),
                  "rna_source": "layers/counts restricted to GEX before normalization"}

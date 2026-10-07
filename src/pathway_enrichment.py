@@ -14,18 +14,32 @@ import pandas as pd
 HALLMARK_URL = "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=MSigDB_Hallmark_2020"
 
 
-def read_gmt(path):
+def _parse_gmt(text):
     sets = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in text.lstrip("\ufeff").splitlines():
         if not line.strip():
             continue
         fields = line.split("\t")
-        if len(fields) < 3 or fields[0] in sets:
+        if len(fields) < 3 or not fields[0].strip() or fields[0] in sets or line.lstrip().startswith("<"):
             raise ValueError("Malformed GMT or duplicate pathway name")
         sets[fields[0]] = sorted({g.strip() for g in fields[2:] if g.strip()})
+        if not sets[fields[0]]:
+            raise ValueError(f"GMT pathway has no genes: {fields[0]}")
     if not sets:
         raise ValueError("Empty GMT")
     return sets
+
+
+def read_gmt(path):
+    return _parse_gmt(Path(path).read_text(encoding="utf-8"))
+
+
+def _validate_hallmark(data):
+    # Enrichr uses display names (e.g. "Hypoxia"), not MSigDB's
+    # HALLMARK_HYPOXIA identifiers. Preserve its names and exact GMT bytes.
+    sets = _parse_gmt(data.decode("utf-8"))
+    if len(sets) != 50:
+        raise ValueError(f"Expected 50 Hallmark pathways; received {len(sets)}")
 
 
 def cache_hallmark(path):
@@ -34,13 +48,13 @@ def cache_hallmark(path):
     if not path.exists():
         with urlopen(HALLMARK_URL, timeout=120) as response:
             data = response.read()
-        text = data.decode("utf-8")
-        if not text.startswith("HALLMARK_") or len(text.splitlines()) != 50:
-            raise ValueError("Unexpected Hallmark response; supply a reviewed human-symbol GMT")
+        _validate_hallmark(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-    read_gmt(path)
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    else:
+        data = path.read_bytes()
+        _validate_hallmark(data)
+    return hashlib.sha256(data).hexdigest()
 
 
 def bh_adjust(p):

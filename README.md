@@ -40,3 +40,7 @@ New notebooks `nb04_single_donor_rna_characterization.ipynb` and
 the existing Colab/Drive data paths. See [the workflow guide](SINGLE_DONOR_WORKFLOW.md)
 for setup, scientific choices, saved outputs, tests and the real-data validation
 gate before ATAC/protein follow-up. The original notebooks are preserved.
+
+After reviewing nb05, run `nb06_pathway_atac_support.ipynb` for paired Multiome
+RNA–ATAC program support. Copy `src/atac_programs.py` and `src/atac_plots.py` to the
+same Drive project first. See [the ATAC run guide](ATAC_WORKFLOW.md).

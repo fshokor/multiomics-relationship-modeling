@@ -115,7 +115,9 @@ results. Regenerate only the new notebooks with
 
 The real data are on Drive, not available in this local checkout. The first milestone
 must still be run and interpreted there. In accordance with the requested sequencing,
-nb06 (ATAC gene activity), nb07 (direct versus phenotypic protein support), and nb08
+nb06 (ATAC gene activity) is now implemented following review of the executed RNA
+notebooks; see [the ATAC run guide](ATAC_WORKFLOW.md). Its real-data execution remains
+pending in Colab. nb07 (direct versus phenotypic protein support) and nb08
 (multilayer summaries) are **not implemented yet**. Their future implementation must
 preserve within-capture pairing only, distinguish unmeasured ADTs from negative
 evidence, standardize layer scores, and avoid causal or temporal-priming claims.

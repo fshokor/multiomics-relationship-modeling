@@ -14,6 +14,34 @@ from src.rna_concordance import compare_pathways, select_programs
 
 
 class NumericalTests(unittest.TestCase):
+    def test_hallmark_download_and_cache(self):
+        import hashlib
+        import io
+        from unittest.mock import patch
+        from src.pathway_enrichment import cache_hallmark, read_gmt
+        data = ('\ufeff' + '\n'.join(
+            f'{name}\t\tIL6\tSTAT3\t' for name in
+            ['TNF-alpha Signaling via NF-kB', 'Hypoxia'] + [f'Program {i}' for i in range(48)]
+        ) + '\n\n').encode('utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'hallmark.gmt'
+            with patch('src.pathway_enrichment.urlopen', return_value=io.BytesIO(data)):
+                digest = cache_hallmark(path)
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(digest, hashlib.sha256(data).hexdigest())
+            self.assertEqual(len(read_gmt(path)), 50)
+            with patch('src.pathway_enrichment.urlopen', side_effect=AssertionError('Should reuse cache')):
+                self.assertEqual(cache_hallmark(path), digest)
+            path.write_text('Hypoxia\t\tIL6\n')
+            with self.assertRaisesRegex(ValueError, 'Expected 50'):
+                cache_hallmark(path)
+            for invalid in [b'<html>error</html>', b'Empty\t\t\n', b'Duplicate\t\tA\nDuplicate\t\tB']:
+                target = Path(directory) / 'invalid.gmt'
+                with patch('src.pathway_enrichment.urlopen', return_value=io.BytesIO(invalid)):
+                    with self.assertRaises(ValueError):
+                        cache_hallmark(target)
+                self.assertFalse(target.exists())
+
     def test_normalization(self):
         x = sparse.csr_matrix([[1, 3], [2, 6]])
         actual = normalize_counts(x).toarray()
@@ -87,6 +115,31 @@ class NumericalTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_feature_names_scoped_to_modality(self):
+        import anndata as ad
+        from src.single_donor_io import inspect_h5ad, read_rna_counts
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'collision.h5ad'
+            obs = pd.DataFrame({'DonorID': ['d1'], 'Site': ['s1'], 'cell_type': ['NK']}, index=['cell1'])
+            var = pd.DataFrame({'feature_types': ['GEX', 'ADT', 'GEX']}, index=['CD14', 'CD14', 'NKG7'])
+            obj = ad.AnnData(sparse.csr_matrix([[2, 900, 3]]), obs=obs, var=var)
+            obj.layers['counts'] = obj.X.copy()
+            obj.write_h5ad(path)
+            _, inspected_var, audit = inspect_h5ad(path)
+            counts, genes = read_rna_counts(path, [0], inspected_var)
+            self.assertEqual(genes.tolist(), ['CD14', 'NKG7'])
+            np.testing.assert_array_equal(counts.toarray(), [[2, 3]])
+            self.assertEqual(audit['repeated_feature_names'], [{'name': 'CD14', 'feature_types': ['GEX', 'ADT']}])
+            obj.var['feature_types'] = ['GEX', 'GEX', 'GEX']
+            obj.write_h5ad(path)
+            with self.assertRaisesRegex(ValueError, 'Duplicate names within GEX'):
+                inspect_h5ad(path)
+            obj.var_names = ['A', 'B', 'C']
+            doubled = ad.concat([obj, obj], merge='same')
+            doubled.write_h5ad(path)
+            with self.assertRaisesRegex(ValueError, 'Duplicate cell IDs'):
+                inspect_h5ad(path)
+
     def test_end_to_end(self):
         import anndata as ad
         from src.single_donor_workflow import prepare_donor, characterize_donor, run_concordance, load_characterization
@@ -139,7 +192,8 @@ class WorkflowTests(unittest.TestCase):
             for cell in nb.cells:
                 if cell.cell_type == 'code':
                     ast.parse(cell.source)
-                    self.assertEqual(cell.outputs, [])
+                    # Real Colab outputs are now intentionally preserved in nb04/05.
+                    self.assertFalse(any(o.output_type == 'error' for o in cell.outputs))
 
 
 if __name__ == '__main__':
