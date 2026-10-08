@@ -51,3 +51,6 @@ files to copy, evidence tiers, progress reporting and saved outputs.
 
 After nb07 review, `nb08_multilayer_pathway_states.ipynb` combines saved RNA, ATAC
 and protein evidence without loading raw matrices. See [the multilayer guide](MULTILAYER_WORKFLOW.md).
+
+`nb09_cross_donor_validation.ipynb` extends the fixed CD14 programs to eligible
+donors and exports site-resolved raw RNA pseudobulk. See [the cross-donor guide](CROSS_DONOR_WORKFLOW.md).
