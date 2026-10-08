@@ -130,9 +130,15 @@ class IntegrationTests(unittest.TestCase):
         data.layers['counts']=data.X.copy()
         data.var['highly_variable']=True
         with tempfile.TemporaryDirectory() as directory:
-            train_shared_scvi(data,Path(directory),n_latent=3,max_epochs=2)
+            from src.rna_integration import training_device_check
+            self.assertEqual(training_device_check(Path(directory), 'cpu'), 'cpu')
+            self.assertEqual(json.loads((Path(directory)/'training_device.json').read_text())['state'],'passed')
+            train_shared_scvi(data,Path(directory),n_latent=3,max_epochs=4,kl_warmup_epochs=1,min_epochs=3,accelerator='cpu')
             self.assertEqual(data.obsm['X_scVI'].shape,(100,3))
             self.assertTrue((Path(directory)/'scvi_model').is_dir())
+            summary=json.loads((Path(directory)/'training_summary.json').read_text())
+            self.assertTrue(summary['full_kl_weight_reached'])
+            self.assertGreaterEqual(summary['epochs_completed'],3)
 
 
 if __name__=='__main__': unittest.main()

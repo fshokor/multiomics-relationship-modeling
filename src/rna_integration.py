@@ -168,20 +168,68 @@ def build_uncorrected_embedding(data,n_pcs=30,k=30,seed=42):
     data.obsm['X_umap_uncorrected']=data.obsm['X_umap'].copy()
 
 
-def train_shared_scvi(data,output,n_latent=30,max_epochs=100,seed=42):
+def training_device_check(output,accelerator='auto'):
+    """Exercise the CUDA linear forward/backward path before expensive preparation."""
+    import torch
+    if accelerator not in ['auto','cpu','gpu']:
+        raise ValueError('accelerator must be auto, cpu or gpu')
+    device='cuda' if accelerator=='gpu' or (accelerator=='auto' and torch.cuda.is_available()) else 'cpu'
+    info=dict(torch_version=torch.__version__,torch_cuda=torch.version.cuda,
+              requested_accelerator=accelerator,device=device)
+    try:
+        if device=='cuda':
+            info['gpu']=torch.cuda.get_device_name(0)
+            free,total=torch.cuda.mem_get_info()
+            info.update(free_bytes=free,total_bytes=total)
+        # Full FP32 is a conservative diagnostic, not a claimed cuBLAS repair.
+        torch.set_float32_matmul_precision('highest')
+        layer=torch.nn.Linear(3002,128).to(device)
+        x=torch.randn(256,3002,device=device,requires_grad=True)
+        layer(x).square().mean().backward()
+        if device=='cuda': torch.cuda.synchronize()
+        info['state']='passed'
+        del layer,x
+        if device=='cuda': torch.cuda.empty_cache()
+    except RuntimeError as exc:
+        info.update(state='failed',error=str(exc))
+        write_json(Path(output)/'training_device.json',info)
+        raise RuntimeError('GPU/PyTorch preflight failed before data preparation. Restart the Colab session and retry; if it persists, use accelerator="cpu" in a fresh run folder. See training_device.json. No model was trained.') from exc
+    write_json(Path(output)/'training_device.json',info)
+    return 'gpu' if device=='cuda' else 'cpu'
+
+
+def train_shared_scvi(data,output,n_latent=30,max_epochs=300,seed=42,accelerator='auto',batch_size=256,
+                      kl_warmup_epochs=50,min_epochs=100,early_stopping_patience=30):
+    if not (0 <= kl_warmup_epochs < min_epochs <= max_epochs):
+        raise ValueError('Require 0 <= kl_warmup_epochs < min_epochs <= max_epochs')
     import scvi
     scvi.settings.seed=seed
     # Exactly the same HVGs as baseline; raw counts, not normalized .X.
     model_data=data[:,data.var.highly_variable].copy()
     scvi.model.SCVI.setup_anndata(model_data,layer='counts',batch_key='assay')
     model=scvi.model.SCVI(model_data,n_latent=n_latent,n_layers=2,gene_likelihood='nb')
-    model.train(max_epochs=max_epochs,early_stopping=True,early_stopping_patience=15,
-                train_size=.9,batch_size=256,accelerator='auto',devices=1)
+    model.train(max_epochs=max_epochs,min_epochs=min_epochs,early_stopping=True,
+                early_stopping_patience=early_stopping_patience,
+                early_stopping_warmup_epochs=kl_warmup_epochs,
+                early_stopping_monitor='elbo_validation',check_val_every_n_epoch=1,
+                log_every_n_steps=1,
+                plan_kwargs={'n_epochs_kl_warmup':kl_warmup_epochs},
+                train_size=.9,batch_size=batch_size,accelerator=accelerator,devices=1,precision='32-true')
     data.obsm['X_scVI']=model.get_latent_representation()
     model.save(str(Path(output)/'scvi_model'),overwrite=False,save_anndata=False)
     for name,history in model.history.items():
         if hasattr(history,'to_csv'):
             history.to_csv(Path(output)/f'training_{name}.csv')
+    weights=model.history['kl_weight'].iloc[:,0]
+    validation=model.history['elbo_validation'].iloc[:,0]
+    write_json(Path(output)/'training_summary.json',dict(
+        epochs_completed=len(validation),max_epochs=max_epochs,min_epochs=min_epochs,
+        kl_warmup_epochs=kl_warmup_epochs,early_stopping_patience=early_stopping_patience,
+        final_kl_weight=float(weights.iloc[-1]),full_kl_weight_reached=bool(weights.iloc[-1]>=0.999),
+        best_validation_epoch=int(validation.astype(float).idxmin()),
+        final_validation_elbo=float(validation.iloc[-1]),
+        reached_epoch_limit=bool(len(validation)>=max_epochs),
+        note='Final weights saved; inspect post-warmup ELBO and biological metrics. Stopping alone does not establish convergence.'))
     return model
 
 
@@ -236,13 +284,15 @@ def evaluate_spaces(data,scores,output,k=30,cap=20000,min_cells=50,seed=42):
     return comparison,types,donors,gradients,criteria
 
 
-def run_integration(paths,cohort_root,discovery_root,output,n_hvgs=3000,n_latent=30,max_epochs=100,seed=42):
+def run_integration(paths,cohort_root,discovery_root,output,n_hvgs=3000,n_latent=30,max_epochs=300,seed=42,accelerator='auto',batch_size=256,
+                      kl_warmup_epochs=50,min_epochs=100,early_stopping_patience=30):
     import scanpy as sc
     output=Path(output)
     if (output/'status.json').exists():
         raise FileExistsError('Use a fresh run folder; existing partial or completed run is preserved')
     output.mkdir(parents=True,exist_ok=True)
     write_json(output/'status.json',{'state':'in_progress'})
+    accelerator=training_device_check(output,accelerator)
     data,protocol=prepare_shared_rna_counts(paths,cohort_root,discovery_root,output)
     print('Selecting assay-aware HVGs',flush=True)
     hvg=select_shared_hvgs(data,n_hvgs,seed=seed)
@@ -257,7 +307,8 @@ def run_integration(paths,cohort_root,discovery_root,output,n_hvgs=3000,n_latent
     np.save(output/'pca.npy',data.obsm['X_pca'])
     np.save(output/'umap_uncorrected.npy',data.obsm['X_umap_uncorrected'])
     print('Training assay-only scVI; no donor/site/cell-type covariates',flush=True)
-    model=train_shared_scvi(data,output,n_latent,max_epochs,seed)
+    model=train_shared_scvi(data,output,n_latent,max_epochs,seed,accelerator,batch_size,
+                            kl_warmup_epochs,min_epochs,early_stopping_patience)
     sc.pp.neighbors(data,n_neighbors=30,use_rep='X_scVI',key_added='integrated',random_state=seed)
     sc.tl.umap(data,neighbors_key='integrated',random_state=seed)
     data.obsm['X_umap_integrated']=data.obsm['X_umap'].copy()
@@ -271,7 +322,8 @@ def run_integration(paths,cohort_root,discovery_root,output,n_hvgs=3000,n_latent
     for key in ['X_scVI','X_umap_integrated']:
         np.save(output/(key+'.npy'),data.obsm[key])
     versions={p:importlib.metadata.version(p) for p in ['scanpy','scvi-tools','anndata','numpy','scipy','scikit-learn','torch']}
-    write_json(output/'manifest.json',dict(seed=seed,n_hvgs=int(data.var.highly_variable.sum()),n_latent=n_latent,max_epochs=max_epochs,
+    write_json(output/'manifest.json',dict(seed=seed,n_hvgs=int(data.var.highly_variable.sum()),n_latent=n_latent,max_epochs=max_epochs,accelerator=accelerator,batch_size=batch_size,
+        kl_warmup_epochs=kl_warmup_epochs,min_epochs=min_epochs,early_stopping_patience=early_stopping_patience,
         versions=versions,figures=figures,n_cells=data.n_obs,n_shared_genes=data.n_vars,
         cohort_protocol_sha256=sha256(Path(cohort_root)/'protocol.json'),
         integration='SCVI counts HVGs; batch_key assay only; NB likelihood; no labels_key; no donor/site correction',

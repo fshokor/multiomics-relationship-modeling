@@ -29,7 +29,8 @@ donors are loaded; unresolved labels stay in training but not labelled evaluatio
 - Up to 3,000 HVGs, equal-size assay samples, Scanpy assay-aware dispersion selection.
 - Baseline: centered PCA on log RNA, neighbors and UMAP. No gene-wise variance scaling.
 - Primary integration: unsupervised scVI with raw HVG counts, assay batch only,
-  NB likelihood, 30 latent dimensions, two layers, maximum 100 epochs, early stopping.
+  NB likelihood, 30 latent dimensions, two layers, 50-epoch KL warm-up, minimum 100 / maximum 300 epochs; validation ELBO
+  early stopping after warm-up with patience 30.
 - No ADT/ATAC, donor/site correction or cell-type labels enter model training.
 - Biological labels evaluate output only. Same evaluation cells in both spaces:
   <=20,000 donor/assay quota-sampled cells, k=30, silhouette subset <=3,000.
@@ -49,7 +50,7 @@ because assay mixing alone improved. No inference treats cells as independent pe
 
 ## Outputs
 
-`results/shared_rna_integration/run01/` contains one shared RNA h5ad (normalized X
+`results/shared_rna_integration/run03/` contains one shared RNA h5ad (normalized X
 and one counts layer), HVG/shared gene lists, metadata, PCA/scVI/UMAP coordinates,
 model and training histories, module scores/membership, input audits, per-cell,
 per-type and donor/type metrics, gradient checks, decision criteria and 16 PNG/PDF
@@ -71,3 +72,18 @@ smoke test when installed. Synthetic execution is not real biological validation
 
 Implementation follows [Scanpy HVG documentation](https://scanpy.readthedocs.io/en/latest/api/generated/scanpy.pp.highly_variable_genes.html)
 and the [scVI API](https://docs.scvi-tools.org/en/stable/api/reference/scvi.model.SCVI.html).
+
+## Run03 after local run02 review
+
+Run02 ended at 100 epochs with KL weight 0.2475 and its best validation ELBO
+at the final epoch. Run03 explicitly completes KL warm-up and allows further
+training. These settings are a controlled follow-up, not a guarantee of improved
+biological preservation. Review training_summary.json and all training CSVs, then
+compare the same alignment and CD14 gradient metrics with run02. A run that hits
+300 epochs still needs convergence review. Final weights, not a restored best
+checkpoint, are evaluated.
+
+Copy the updated notebook and src/rna_integration.py to Drive and restart the
+Colab runtime before Run all. Results go to run03; run02 stays intact. The previous
+executed notebook is saved locally in run02/nb10_executed_before_run03.ipynb.
+The actual cohort run must execute in Colab where the input files are available.

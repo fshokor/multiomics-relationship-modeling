@@ -25,7 +25,7 @@ Copy this notebook and `src/rna_integration.py`, `src/rna_integration_metrics.py
 A Colab GPU runtime is recommended for scVI; CPU is allowed but may be slow.
 '''),code('''
 from pathlib import Path
-import sys, subprocess
+import sys, subprocess, json
 try:
     from google.colab import drive
     IN_COLAB=True
@@ -45,12 +45,17 @@ from configs.paths import CITE_H5AD,MULTIOME_H5AD
 from src.rna_integration import run_integration
 COHORT=BASE_PATH/'results/cross_donor/nb09_run01'
 DISCOVERY=BASE_PATH/'results/single_donor'
-OUTPUT=BASE_PATH/'results/shared_rna_integration/run01'
+OUTPUT=BASE_PATH/'results/shared_rna_integration/run03'
 PATHS={'cite':CITE_H5AD,'multiome':MULTIOME_H5AD}
 SEED=42
 N_HVGS=3000
 N_LATENT=30
-MAX_EPOCHS=100
+MAX_EPOCHS=300
+KL_WARMUP_EPOCHS=50
+MIN_EPOCHS=100
+EARLY_STOPPING_PATIENCE=30
+ACCELERATOR="auto"
+BATCH_SIZE=128
 display(pd.read_csv(COHORT/'donor_eligibility.csv'))
 print('Model: raw RNA counts; batch_key=assay only; no cell-type labels supplied.')
 '''),markdown('''
@@ -88,7 +93,10 @@ if IN_COLAB:
 # Fresh folder required: partial/completed runs are preserved, no automatic resume.
 comparison,types,donors,gradients,criteria=run_integration(
     PATHS,COHORT,DISCOVERY,OUTPUT,n_hvgs=N_HVGS,n_latent=N_LATENT,
-    max_epochs=MAX_EPOCHS,seed=SEED)
+    max_epochs=MAX_EPOCHS,seed=SEED,accelerator=ACCELERATOR,batch_size=BATCH_SIZE,
+    kl_warmup_epochs=KL_WARMUP_EPOCHS,min_epochs=MIN_EPOCHS,
+    early_stopping_patience=EARLY_STOPPING_PATIENCE)
+display(json.loads((OUTPUT/'training_summary.json').read_text()))
 '''),code('''
 import json
 audit=json.loads((OUTPUT/'input_audit.json').read_text())
@@ -118,7 +126,9 @@ display(Image(filename=str(OUTPUT/'figures/metric_comparison.png')))
 ## Q3 — Does correction improve mixing while preserving cell identity?
 The scVI model uses raw HVG counts, assay as its only batch variable, negative-binomial
 likelihood, two hidden layers and 30 latent dimensions. Training has a 90% training
-split, at most 100 epochs and early stopping with patience 15. Record actual package
+split, KL warm-up of 50 epochs, at least 100 and at most 300 epochs. Early stopping
+monitors validation ELBO only after warm-up, with patience 30 and validation every
+epoch. The final model weights are saved. Record actual package
 versions, training history and saved model. No hyperparameter search is performed.
 scVI and PCA differ in model as well as correction, so this is a practical before/
 after comparison, not causal isolation of an assay-correction effect.
@@ -190,8 +200,19 @@ print('Concern populations:')
 display(types[(types.space=='integrated') & (types.alignment_status=='concern')])
 print('Results and model:',OUTPUT)
 '''),markdown('''
+## Previous run and new evaluation
+Local run02 completed 100 epochs, but KL weight reached only 0.2475 and validation
+ELBO was best at the final epoch. Assay mixing improved while CD14 pathway-neighbor
+agreement declined in all 32 paired comparisons. These are run02 findings, not
+predictions for run03. This run changes the training schedule only; the cohort,
+seed, HVGs, model architecture and biological evaluation remain fixed.
+
+Review `training_summary.json` and training histories: verify full KL weight,
+inspect post-warm-up validation ELBO, and flag runs reaching the epoch limit.
+Compare run03 with run02 using the same metrics; better mixing alone is insufficient.
+
 ## Main findings
-No biological conclusion is pre-written. Fill this section after reviewing the
+No biological conclusion for run03 is pre-written. Fill this section after reviewing the
 executed metrics, training histories, population failures and donor/CD14 checks.
 Distinguish cell visualization, population agreement and donor reproducibility.
 
