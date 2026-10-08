@@ -54,3 +54,7 @@ and protein evidence without loading raw matrices. See [the multilayer guide](MU
 
 `nb09_cross_donor_validation.ipynb` extends the fixed CD14 programs to eligible
 donors and exports site-resolved raw RNA pseudobulk. See [the cross-donor guide](CROSS_DONOR_WORKFLOW.md).
+
+`nb10_shared_rna_integration.ipynb` evaluates an unsupervised assay-only scVI RNA
+bridge against an uncorrected baseline, with cell-type, donor and CD14-gradient
+safeguards. See [the shared RNA integration guide](SHARED_RNA_INTEGRATION.md).
