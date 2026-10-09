@@ -1,10 +1,15 @@
-"""Generate nb10 only; never modify nb01–09."""
+"""Generate nb10 only; never modify nb01â€“09."""
 import json
 from pathlib import Path
 from build_single_donor_notebooks import code,markdown
 
 cells=[markdown('''
-# nb10 — Shared RNA integration
+# nb10 â€” Shared RNA integration
+
+## Reopen a completed run
+Leave `RUN_TRAINING=False`, select the saved OUTPUT folder, and Run all.
+Saved tables and figures reload without training, raw data or a GPU.
+For a new model, set RUN_TRAINING=True and choose a fresh OUTPUT folder.
 
 ## Scientific question
 Can CITE and Multiome cells occupy a common RNA-defined space while preserving
@@ -21,18 +26,20 @@ site covariates, ADT or ATAC features enter training. Evaluate both spaces on th
 same sampled cells, including population/donor agreement and CD14 score gradients.
 
 Copy this notebook and `src/rna_integration.py`, `src/rna_integration_metrics.py`,
-`src/rna_integration_plots.py` to the existing Drive project. nb01–09 stay unchanged.
+`src/rna_integration_plots.py` to the existing Drive project. nb01â€“09 stay unchanged.
 A Colab GPU runtime is recommended for scVI; CPU is allowed but may be slow.
 '''),code('''
 from pathlib import Path
 import sys, subprocess, json
+RUN_TRAINING=False  # Default: review saved results without training or input copying.
 try:
     from google.colab import drive
     IN_COLAB=True
 except ImportError:
     IN_COLAB=False
 if IN_COLAB:
-    subprocess.check_call([sys.executable,'-m','pip','install','-q','scanpy>=1.11,<1.12','scvi-tools>=1.3,<1.5','anndata>=0.11,<0.13'])
+    if RUN_TRAINING:
+        subprocess.check_call([sys.executable,'-m','pip','install','-q','scanpy>=1.11,<1.12','scvi-tools>=1.3,<1.5','anndata>=0.11,<0.13'])
     drive.mount('/content/drive')
     BASE_PATH=Path('/content/drive/MyDrive/multiomics-relationship-modeling')
 else:
@@ -41,12 +48,9 @@ else:
 sys.path.insert(0,str(BASE_PATH))
 import pandas as pd
 from IPython.display import display,Image
-from configs.paths import CITE_H5AD,MULTIOME_H5AD
-from src.rna_integration import run_integration
 COHORT=BASE_PATH/'results/cross_donor/nb09_run01'
 DISCOVERY=BASE_PATH/'results/single_donor'
 OUTPUT=BASE_PATH/'results/shared_rna_integration/run03'
-PATHS={'cite':CITE_H5AD,'multiome':MULTIOME_H5AD}
 SEED=42
 N_HVGS=3000
 N_LATENT=30
@@ -56,10 +60,9 @@ MIN_EPOCHS=100
 EARLY_STOPPING_PATIENCE=30
 ACCELERATOR="auto"
 BATCH_SIZE=128
-display(pd.read_csv(COHORT/'donor_eligibility.csv'))
-print('Model: raw RNA counts; batch_key=assay only; no cell-type labels supplied.')
-'''),markdown('''
-## Q1 — Do RNA profiles already occupy similar biological spaces?
+print('Mode:', 'TRAIN NEW MODEL' if RUN_TRAINING else 'LOAD SAVED RESULTS')
+print('Result folder:',OUTPUT)'''),markdown('''
+## Q1 â€” Do RNA profiles already occupy similar biological spaces?
 First inspect the source representation and cohort counts. The loader samples RNA
 entries from .X and layers/counts, recording integer fraction, range and row sums.
 This cannot reconstruct preprocessing history; .X is never assumed comparable.
@@ -78,25 +81,55 @@ log-expression on those HVGs without per-gene unit-variance scaling.
 References: [Scanpy HVGs](https://scanpy.readthedocs.io/en/latest/api/generated/scanpy.pp.highly_variable_genes.html),
 [scVI model API](https://docs.scvi-tools.org/en/stable/api/reference/scvi.model.SCVI.html).
 '''),code('''
-# Optional fast local copies: originals stay on Drive, results are written to OUTPUT.
-import shutil
-if IN_COLAB:
-    local=Path('/content/nb10_inputs'); local.mkdir(exist_ok=True)
-    needed=sum(p.stat().st_size for p in PATHS.values())
-    if shutil.disk_usage(local).free < needed:
-        raise RuntimeError('Not enough local disk for input copies; choose a larger runtime or skip copying')
-    for assay,source in list(PATHS.items()):
-        print('Copying',assay,flush=True)
-        dest=local/source.name
-        shutil.copyfile(source,dest)
-        PATHS[assay]=dest
-# Fresh folder required: partial/completed runs are preserved, no automatic resume.
-comparison,types,donors,gradients,criteria=run_integration(
-    PATHS,COHORT,DISCOVERY,OUTPUT,n_hvgs=N_HVGS,n_latent=N_LATENT,
-    max_epochs=MAX_EPOCHS,seed=SEED,accelerator=ACCELERATOR,batch_size=BATCH_SIZE,
-    kl_warmup_epochs=KL_WARMUP_EPOCHS,min_epochs=MIN_EPOCHS,
-    early_stopping_patience=EARLY_STOPPING_PATIENCE)
-display(json.loads((OUTPUT/'training_summary.json').read_text()))
+if RUN_TRAINING:
+    from configs.paths import CITE_H5AD,MULTIOME_H5AD
+    from src.rna_integration import run_integration
+    PATHS={'cite':CITE_H5AD,'multiome':MULTIOME_H5AD}
+    if (OUTPUT/'status.json').exists():
+        raise FileExistsError('Choose a fresh OUTPUT folder for training; existing run is preserved.')
+    # Optional fast local copies: originals stay on Drive, results are written to OUTPUT.
+    import shutil
+    if IN_COLAB:
+        local=Path('/content/nb10_inputs'); local.mkdir(exist_ok=True)
+        needed=sum(p.stat().st_size for p in PATHS.values())
+        if shutil.disk_usage(local).free < needed:
+            raise RuntimeError('Not enough local disk for input copies; choose a larger runtime or skip copying')
+        for assay,source in list(PATHS.items()):
+            print('Copying',assay,flush=True)
+            dest=local/source.name 
+            shutil.copyfile(source,dest)
+            PATHS[assay]=dest
+    # Fresh folder required: partial/completed runs are preserved, no automatic resume.
+    comparison,types,donors,gradients,criteria=run_integration(
+        PATHS,COHORT,DISCOVERY,OUTPUT,n_hvgs=N_HVGS,n_latent=N_LATENT,
+        max_epochs=MAX_EPOCHS,seed=SEED,accelerator=ACCELERATOR,batch_size=BATCH_SIZE,
+        kl_warmup_epochs=KL_WARMUP_EPOCHS,min_epochs=MIN_EPOCHS,
+        early_stopping_patience=EARLY_STOPPING_PATIENCE)
+    display(json.loads((OUTPUT/'training_summary.json').read_text()))
+else:
+    print('Training skipped. Run the next cell to load saved analysis tables.')
+'''),code('''
+# Reload saved analysis tables after a runtime restart; no model or raw data needed.
+files = {
+    'comparison': 'metric_comparison.csv',
+    'types': 'celltype_alignment.csv',
+    'donors': 'donor_celltype_alignment.csv',
+    'gradients': 'cd14_gradient_agreement.csv',
+    'criteria': 'bridge_criteria.csv',
+}
+missing = [name for name in files.values() if not (OUTPUT/name).is_file()]
+if missing:
+    raise FileNotFoundError(f'Missing saved analysis files in {OUTPUT}: {missing}. '
+                            'Check the run folder and whether evaluation finished; do not rerun training automatically.')
+status_path = OUTPUT/'status.json'
+status = json.loads(status_path.read_text()) if status_path.exists() else {}
+if status.get('state') != 'complete':
+    print('Warning: completion is not confirmed; reviewing available saved tables only.', status)
+comparison,types,donors,gradients,criteria = [pd.read_csv(OUTPUT/name) for name in files.values()]
+print('Loaded saved analysis from:', OUTPUT)
+summary_path = OUTPUT/'training_summary.json'
+if summary_path.is_file():
+    display(json.loads(summary_path.read_text()))
 '''),code('''
 import json
 audit=json.loads((OUTPUT/'input_audit.json').read_text())
@@ -105,7 +138,7 @@ for field in ['assay','DonorID','Site','cell_type_harmonized']:
     display(pd.read_csv(OUTPUT/f'counts_by_{field}.csv'))
 display(Image(filename=str(OUTPUT/'figures/cell_counts.png')))
 '''),markdown('''
-## Q2 — How much structure is associated with assay, donor, site and cell type?
+## Q2 â€” How much structure is associated with assay, donor, site and cell type?
 Inspect the uncorrected panels first. Quantify silhouette, local label purity,
 majority-neighbor agreement and normalized entropy for each metadata field. Cell-type
 purity and kNN label agreement are related, not independent validations. Metrics are
@@ -123,7 +156,7 @@ for field in ['cell_type_harmonized','assay','DonorID','Site']:
 display(comparison)
 display(Image(filename=str(OUTPUT/'figures/metric_comparison.png')))
 '''),markdown('''
-## Q3 — Does correction improve mixing while preserving cell identity?
+## Q3 â€” Does correction improve mixing while preserving cell identity?
 The scVI model uses raw HVG counts, assay as its only batch variable, negative-binomial
 likelihood, two hidden layers and 30 latent dimensions. Training has a 90% training
 split, KL warm-up of 50 epochs, at least 100 and at most 300 epochs. Early stopping
@@ -138,7 +171,7 @@ purity (loss no more than 0.02) and silhouette (loss no more than 0.05), then in
 per-type results. These tolerances are exploratory choices fixed before results,
 not universal validation standards. Inspect training histories for convergence.
 '''),markdown('''
-## Q4 — Does alignment work across populations?
+## Q4 â€” Does alignment work across populations?
 Within each type, rebuild neighbors and give CITE/Multiome query cells equal weight.
 Divide cross-assay neighbor fraction by its expectation under random mixing at the
 observed assay proportions. A ratio near one reflects composition-adjusted mixing.
@@ -155,7 +188,7 @@ with pd.option_context('display.max_rows',None,'display.max_columns',None):
 for name in ['celltype_assay_mixing','celltype_centroid_distance']:
     display(Image(filename=str(OUTPUT/f'figures/{name}.png')))
 '''),markdown('''
-## Q5 — Do equivalent donor × cell-type populations agree?
+## Q5 â€” Do equivalent donor Ã— cell-type populations agree?
 Evaluate centroid separation and cross-assay neighbors within each donor/type on the
 fixed evaluation sample. RNA profile Pearson correlation uses full-group mean
 normalized shared-gene expression and is unchanged by integration: it is independent
@@ -165,10 +198,10 @@ reported. Most donors occur at one site; donor/site biology is partly confounded
 with pd.option_context('display.max_rows',None,'display.max_columns',None):
     display(donors)
 '''),markdown('''
-## Q6 — Are the validated CD14 gradients preserved?
+## Q6 â€” Are the validated CD14 gradients preserved?
 Use the original two GMT sets and frozen nb09 universe. Scores average variable
 gene z-scores from normalized shared RNA, using common moments with equal weight
-per donor × assay × nb09-reference-type group. This preserves assay offsets rather
+per donor Ã— assay Ã— nb09-reference-type group. This preserves assay offsets rather
 than forcing them to vanish. It changes score scaling from nb09, not membership.
 The modules are evaluated after unsupervised fitting, not supplied as training labels.
 
@@ -185,7 +218,7 @@ for number in [1,2]:
 with pd.option_context('display.max_rows',None):
     display(gradients)
 '''),markdown('''
-## Q7 — Is RNA supported as a bridge for the next phase?
+## Q7 â€” Is RNA supported as a bridge for the next phase?
 The criteria table combines global mixing, identity preservation, population-specific
 failures, donor agreement and module-neighbor gradient consistency. It can report
 supported, partially supported or concern; there is no forced overall success flag.
